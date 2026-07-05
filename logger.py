@@ -2,12 +2,15 @@
 import sqlite3, json, datetime, os
 from scapy.all import IP, TCP
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "nids.db")
+DB_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "nids.db")
+BATCH_SIZE = 50  # number of packets to buffer before committing to disk
 
 class NIDSLogger:
     def __init__(self):
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL")  # allows dashboard to read while nids.py writes
+        self._pending = 0
         self._create_tables()
 
     def _create_tables(self):
@@ -36,7 +39,16 @@ class NIDSLogger:
         cur.execute(
             "INSERT INTO packets (src_ip,dst_ip,protocol,src_port,dst_port,flags,timestamp) VALUES (?,?,?,?,?,?,?)",
             (src_ip, dst_ip, protocol, src_port, dst_port, flags, str(datetime.datetime.now())))
-        self.conn.commit()
+        self._pending += 1
+        if self._pending >= BATCH_SIZE:
+            self.conn.commit()
+            self._pending = 0
+
+    def flush(self):
+        """Commit any buffered packet writes. Call on shutdown."""
+        if self._pending > 0:
+            self.conn.commit()
+            self._pending = 0
 
     def log_alert(self, alert: dict):
         cur = self.conn.cursor()
@@ -45,7 +57,7 @@ class NIDSLogger:
             (alert.get("type"), alert.get("severity"), alert.get("src_ip"),
              alert.get("port_count", 0), json.dumps(alert.get("ports", [])),
              alert.get("message"), alert.get("timestamp", str(datetime.datetime.now()))))
-        self.conn.commit()
+        self.conn.commit()  # alerts are always committed immediately — never batched
 
     def get_stats(self):
         cur = self.conn.cursor()
@@ -59,6 +71,7 @@ class NIDSLogger:
                 "by_severity": by_severity, "top_attackers": top_attackers}
 
     def print_summary(self):
+        self.flush()
         stats = self.get_stats()
         print("\n" + "="*60)
         print("   Session Summary")
