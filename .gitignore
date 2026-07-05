@@ -1,2 +1,7 @@
+.env
 .env.cloudflare
 .~lock.*
+__pycache__/
+*.pyc
+*.pyo
+logs/
