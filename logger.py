@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sqlite3, json, datetime, os
+import sqlite3, json, datetime, os, atexit
 from scapy.all import IP, TCP
 
 DB_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "nids.db")
@@ -12,6 +12,7 @@ class NIDSLogger:
         self.conn.execute("PRAGMA journal_mode=WAL")  # allows dashboard to read while nids.py writes
         self._pending = 0
         self._create_tables()
+        atexit.register(self.flush)  # flush buffered packets even if nids.py crashes
 
     def _create_tables(self):
         cur = self.conn.cursor()

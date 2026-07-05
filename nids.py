@@ -38,14 +38,17 @@ def is_on_cooldown(src_ip):
 def cleanup_old_entries():
     while True:
         time.sleep(TIME_WINDOW)
-        cutoff = time.time() - TIME_WINDOW
+        now = time.time()
         with lock:
             for ip in list(port_scan_tracker.keys()):
                 for ts in list(port_scan_tracker[ip].keys()):
-                    if ts < cutoff:
+                    if ts < now - TIME_WINDOW:
                         del port_scan_tracker[ip][ts]
                 if not port_scan_tracker[ip]:
                     del port_scan_tracker[ip]
+            for ip in list(alerted_ips.keys()):
+                if now - alerted_ips[ip] > ALERT_COOLDOWN:
+                    del alerted_ips[ip]
 
 def detect_port_scan(packet):
     if not (packet.haslayer(IP) and packet.haslayer(TCP)): return
